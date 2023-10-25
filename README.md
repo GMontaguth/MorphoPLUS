@@ -1,4 +1,4 @@
-# Galfit_modificado_splus_cluster
+# MonrphPLUS
 
 Este programa requiere tener python, psfex, sextractor y galfitm.
 
