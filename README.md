@@ -1,4 +1,4 @@
-# MonrphPLUS
+# MorphoPLUS
 
 Este programa requiere tener python, psfex, sextractor y galfitm.
 
