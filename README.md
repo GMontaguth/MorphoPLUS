@@ -45,7 +45,7 @@ Luego, ejecútalo en bash:
 
 > ./ejecutable.sh
 
-ste script se encarga de descargar cada imagen en los doce filtros, sus PSFs, generar las máscaras y el punto de impunt para GalfitM para cada subcampo. Y por último, corre GalfitM.
+Este script se encarga de descargar cada imagen en los doce filtros, sus PSFs, generar las máscaras y el punto de impunt para GalfitM para cada subcampo. Y por último, corre GalfitM.
 
 Para generar las tablas con la información del ajuste, debes ejecutar el programa leer_outputs.py, que generará tres tablas. En la primera se encuentran los datos de SPLUS y del ajuste para cada galaxia donde el ajuste y el chi2_red es mayor a dos, en la segunda las galaxias donde el chi es mayor, y en la tercera se encuentran los Chi2 por subcampo.
 
