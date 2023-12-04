@@ -155,8 +155,11 @@ def arh_galfit(position,Table,Z,field,size):
 		Data.append('2) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(y1,y1,y1,y1,y1,y1,y1,y1,y1,y1,y1,y1))  # position y
 		Data.append('3) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 12'%(Table['u_auto'][i],Table['J0378_auto'][i],Table['J0395_auto'][i],Table['J0410_auto'][i],Table['J0430_auto'][i],Table['g_auto'][i],
 		Table['J0515_auto'][i],Table['J0515_auto'][i],Table['J0660_auto'][i],Table['i_auto'][i],Table['J0861_auto'][i],Table['z_auto'][i]))# total magnitude in each band
-		Data.append('4) 7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0,7.0 2') # R_e in each band
-		Data.append('5) 3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0 2')  # Sersic exponent in each band
+		R=Table['FLUX_RADIUS_50'][i]
+		C=5*np.log10(Table['FLUX_RADIUS_90'][i]/R)
+		n=(C/2.77)**(1/0.466) #aproximado (4R. Andrae, K. Jahnke & P. Melchior (2010))
+		Data.append('4) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(R,R,R,R,R,R,R,R,R,R,R,R))# R_e in each band
+		Data.append('5) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(n,n,n,n,n,n,n,n,n,n,n,n))  # Sersic exponent in each band
 		el=1/Table['ELONGATION'][i]
 		Data.append('9) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(el,el,el,el,el,el,el,el,el,el,el,el))  # axis ratio (b/a) in each band
 		if Table['THETA'][i]>=0:
