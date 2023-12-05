@@ -2,7 +2,7 @@ import numpy as np
 from astropy.io import fits
 
 
-radius = 10
+radius = 22
 
 def make_psf(fwhm, beta, outfile):
     import numpy as np
