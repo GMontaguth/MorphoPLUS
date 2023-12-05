@@ -35,6 +35,8 @@ La información está en: https://anaconda.org/conda-forge/astromatic-source-ext
 
 Adicionalmente, descarga GalfitM desde esta página: https://www.nottingham.ac.uk/astronomy/megamorph/ y colócalo dentro de esta carpeta.
 
+Se deben crear dos carpetas vacias, la primera es Field_img, que debe contener dentro de esta carpeta tres carpetas vacias: det, mask, psf. La segunda carpeta  vacia dentro de MorphPLUS es Out_img.
+
 Luego, en la carpeta "Catalogos", ingresa la lista de objetos que deseas ajustar. Esta tabla debe tener el nombre "SPLUS_Table.csv" y ya debe estar corregida por la extinción. Además, la tabla que contiene los zero points del survey es del DR4. Luego, debes modificar en los archivos los parámetros size y c, que es el tamaño que tendrá cada subimagen de cada campo, ya que GalfitM no es capaz de ajustar sobre el campo completo de SPLUS; c es el centro de cada subimagen. Esto se debe modificar solo en: ejecutable.py.
 
 Para ejecutar GalfitM_Modificado, corre el programa ejecutable.py. Este crea un archivo .sh, al cual debes darle los permisos con:
