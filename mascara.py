@@ -158,16 +158,16 @@ def arh_galfit(position,Table,Z,field,size):
 		R=Table['FLUX_RADIUS_50'][i]
 		C=5*np.log10(Table['FLUX_RADIUS_90'][i]/R)
 		n=(C/2.77)**(1/0.466) #aproximado (4R. Andrae, K. Jahnke & P. Melchior (2010))
-		Data.append('4) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(R,R,R,R,R,R,R,R,R,R,R,R))# R_e in each band
-		Data.append('5) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(n,n,n,n,n,n,n,n,n,n,n,n))  # Sersic exponent in each band
+		Data.append('4) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 2'%(R,R,R,R,R,R,R,R,R,R,R,R))# R_e in each band
+		Data.append('5) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 2'%(n,n,n,n,n,n,n,n,n,n,n,n))  # Sersic exponent in each band
 		el=1/Table['ELONGATION'][i]
-		Data.append('9) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(el,el,el,el,el,el,el,el,el,el,el,el))  # axis ratio (b/a) in each band
+		Data.append('9) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 2'%(el,el,el,el,el,el,el,el,el,el,el,el))  # axis ratio (b/a) in each band
 		if Table['THETA'][i]>=0:
 			Th=(Table['THETA'][i]-90)
 		else:
 			Th=(Table['THETA'][i]+90)
 
-		Data.append('10) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 1'%(Th,Th,Th,Th,Th,Th,Th,Th,Th,Th,Th,Th)) # position angle (PA), same value in each band
+		Data.append('10) %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f 2'%(Th,Th,Th,Th,Th,Th,Th,Th,Th,Th,Th,Th)) # position angle (PA), same value in each band
 		Data.append('Z) 0')   #  Skip this model in output image?  (yes=1, no=0)
 	Data.append('#-------sky----------')
 	Data.append('0) sky')
@@ -204,10 +204,26 @@ for f in Fields:
 				no=0
 
 ###################################### PARA QUE GENERE LA MASCARA DE LAS GALAXIAS INDIVIDUALES###########################
-g_S=Table.read('Catalogos/g_S.csv')
 
-for j in range(len(g_S)):
-	mask_gal(g_S['ID'][j])
+archivo_csv = "Catalogos/g_S.csv"
+
+try:
+    with open(archivo_csv, "r") as archivo:
+        lector_csv = csv.reader(archivo)
+        # Procesar los datos del archivo CSV aquí
+        for fila in lector_csv:
+            # Haz algo con cada fila del archivo CSV
+            archivo_g_S=1
+except FileNotFoundError:
+    # Archivo no encontrado, continuar con el código
+     archivo_g_S=0
+ 
+if archivo_g_S==1:
+	g_S=Table.read('Catalogos/g_S.csv')
+	for j in range(len(g_S)):
+		mask_gal(g_S['ID'][j])
+else:
+	nada=0
 
 
 

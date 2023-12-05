@@ -5,7 +5,7 @@ from astropy.table import *
 from astropy.io import fits
 from astropy.nddata.utils import Cutout2D
 import splusdata
-conn = splusdata.connect( usuario, contrasena) ## from splus.cloud
+conn = splusdata.connect(usuario,contraseña) ## from splus.cloud
 from segmetation import main,main_gal
 from astropy.table import Table,setdiff 
 from astropy.io import ascii
@@ -40,11 +40,10 @@ def recortar_mascara(field): #le ingreso el nombre de la región del stripe82 y 
 					hdr['Cut'] ="%s %s / position center group and size"%(position,size)
 					Recortada=Cutout2D(hdu, position, size)
 					im_Re = fits.PrimaryHDU(Recortada.data, header=hdr) ##Convertir a fits la imagen how to convertrecortada
-					im_Re.writeto('Field_Img/%i_%i_%s_%s.fits'%(position[0],position[1],field,Filtros[i]))
+					im_Re.writeto('Field_Img/%i_%i_%s_%s.fits'%(position[0],position[1],field,Filtros[i]),overwrite=True)
 			
 				else:
 					a=0
-	
 	main(field,c,size,S)
 	
 	return
@@ -69,7 +68,7 @@ def gal(field):
 S=Table.read('Catalogos/SPLUS_Table.csv')
 Datos_S= S.group_by('Field')
 Fields=Datos_S.groups.keys 
-Fields= Fields[0:1]
+#Fields= Fields[0:1]
 
 ##################### PARA QUE GENERE LAS IMAGENES E INPUTS DE GALAXIAS INDIVIDUALES#################################
 IDS_g=[]
@@ -83,9 +82,10 @@ for f in Fields:
 
 IDS_g = np.concatenate(IDS_g)
 p_g = np.concatenate(p_g)
-g_S = Table([IDS_g,p_g], names=['ID', 'positon'])
-gal_S = join(S, g_S, keys='ID')
-ascii.write(gal_S, 'Catalogos/g_S.csv', format='csv', fast_writer=False,overwrite=True)
-galporgal(gal_S)
-main_gal(gal_S)
+if len(IDS_g)>0:
+	g_S = Table([IDS_g,p_g], names=['ID', 'positon'])
+	gal_S = join(S, g_S, keys='ID')
+	ascii.write(gal_S, 'Catalogos/g_S.csv', format='csv', fast_writer=False,overwrite=True)
+	galporgal(gal_S)
+	main_gal(gal_S)
 
