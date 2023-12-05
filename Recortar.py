@@ -5,7 +5,7 @@ from astropy.table import *
 from astropy.io import fits
 from astropy.nddata.utils import Cutout2D
 import splusdata
-conn = splusdata.connect('gpardo', 'gNGC5054') ## from splus.cloud
+conn = splusdata.connect( usuario, contrasena) ## from splus.cloud
 from segmetation import main,main_gal
 from astropy.table import Table,setdiff 
 from astropy.io import ascii
