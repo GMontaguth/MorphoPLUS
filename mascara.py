@@ -37,7 +37,7 @@ from ejecutable import c, size
 from table_generation import tables
 
 # ===================== API CONNECTION =====================
-conn = splusdata.Core('gpardo', 'gNGC5054')
+conn = splusdata.Core()
 
 # ===================== INPUT CATALOG =====================
 S = Table.read('Catalogos/SPLUS_Table.csv')
