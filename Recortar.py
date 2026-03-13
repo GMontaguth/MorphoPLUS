@@ -59,7 +59,7 @@ os.makedirs("Catalogos", exist_ok=True)
 
 
 # ===================== API CONNECTION =====================
-conn = splusdata.Core('gpardo', 'gNGC5054')
+conn = splusdata.Core()
 
 
 # ===================== ROBUST EXCEPTION ALIAS =====================
