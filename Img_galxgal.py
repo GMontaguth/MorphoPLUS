@@ -27,7 +27,7 @@ import concurrent.futures
 
 import splusdata
 
-conn = splusdata.Core('gpardo', 'gNGC5054')
+conn = splusdata.Core()
 
 
 # ===================== CONFIGURATION =====================
