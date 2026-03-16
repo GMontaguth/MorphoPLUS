@@ -57,7 +57,7 @@ size = 550
 GALFITM_BIN = "./galfitm-1.4.4-linux-x86_64"
 
 # ===================== API CONNECTION =====================
-conn = splusdata.Core(username='gpardo', password='gNGC5054')
+conn = splusdata.Core()
 
 # ===================== CATALOG =====================
 S       = Table.read('Catalogos/SPLUS_Table.csv')
