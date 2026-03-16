@@ -103,16 +103,18 @@ Colocar el binario (`galfitm-1.4.4-linux-x86_64` o equivalente) en el **director
 
 ## 3. Estructura de directorios
 
-Antes de correr el pipeline, crear los siguientes directorios vacíos:
+La estructura del proyecto se muestra a continuación. `ejecutable.py` crea todos los directorios de salida automáticamente — **solo es necesario crear `Catalogos/` y colocar el catálogo de entrada antes de la primera corrida**.
 
 ```
 MorphoPlus/
-├── Catalogos/                  # Catálogo de entrada y tablas de salida
-├── Field_Img/                  # Imágenes descargadas y procesadas
-│   ├── det/                    # Imágenes de detección y mapas de segmentación
-│   ├── mask/                   # Máscaras binarias en formato FITS
+├── Catalogos/                  # ← crear este y colocar SPLUS_Table.csv adentro
+│   └── SPLUS_Table.csv         # tu catálogo de entrada
+├── Field_Img/                  # creado automáticamente por ejecutable.py
+│   ├── det/                    # imágenes de detección y mapas de segmentación
+│   ├── mask/                   # máscaras binarias en formato FITS
 │   └── psf/                    # PSFs Moffat en formato FITS por filtro
-├── Out_img/                    # Imágenes de visualización de salida (SVG)
+├── Out_img/                    # creado automáticamente por ejecutable.py
+├── config.py                   # ← TUS credenciales (nunca subir a git)
 ├── ejecutable.py
 ├── Recortar.py
 ├── mascara.py
@@ -126,9 +128,8 @@ MorphoPlus/
 └── galfitm-1.4.4-linux-x86_64 # Binario de GALFITM
 ```
 
-Comando rápido de configuración:
 ```bash
-mkdir -p Catalogos Field_Img/det Field_Img/mask Field_Img/psf Out_img
+mkdir Catalogos   # solo este directorio es necesario antes de correr
 ```
 
 ---

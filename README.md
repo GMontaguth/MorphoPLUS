@@ -103,16 +103,17 @@ Place the binary (`galfitm-1.4.4-linux-x86_64` or equivalent) in the **root Morp
 
 ## 3. Directory Structure
 
-Before running the pipeline, create the following empty directories:
+The expected layout after cloning is shown below. `ejecutable.py` creates all output directories automatically — **you only need to create `Catalogos/` and place your input catalog there** before the first run.
 
 ```
 MorphoPlus/
-├── Catalogos/                  # Input catalog and output tables
-├── Field_Img/                  # All downloaded and processed images
-│   ├── det/                    # Detection images and segmentation maps
-│   ├── mask/                   # Binary mask FITS files
+├── Catalogos/                  # ← create this and place SPLUS_Table.csv inside
+│   └── SPLUS_Table.csv         # your input catalog
+├── Field_Img/                  # created automatically by ejecutable.py
+│   ├── det/                    # detection images and segmentation maps
+│   ├── mask/                   # binary mask FITS files
 │   └── psf/                    # Moffat PSF FITS files per filter
-├── Out_img/                    # Output visualization images (SVG)
+├── Out_img/                    # created automatically by ejecutable.py
 ├── config.py                   # ← YOUR credentials (never commit this file)
 ├── ejecutable.py
 ├── Recortar.py
@@ -127,9 +128,8 @@ MorphoPlus/
 └── galfitm-1.4.4-linux-x86_64 # GALFITM binary
 ```
 
-Quick setup command:
 ```bash
-mkdir -p Catalogos Field_Img/det Field_Img/mask Field_Img/psf Out_img
+mkdir Catalogos   # only this one is needed before running
 ```
 
 ---
