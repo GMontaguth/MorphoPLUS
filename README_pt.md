@@ -19,7 +19,7 @@
 7. [Descrição do pipeline](#7-descrição-do-pipeline)
 8. [Arquivos de saída](#8-arquivos-de-saída)
 9. [Amostra de galáxias de campo (controle)](#9-amostra-de-galáxias-de-campo-controle)
-10. [Query SQL do S-PLUS](#10-query-sql-do-s-plus)
+10. [Dados do S-PLUS](#10-dados-do-s-plus)
 11. [Citação](#11-citação)
 12. [Solução de problemas](#12-solução-de-problemas)
 
@@ -140,7 +140,7 @@ Colocar a tabela de entrada em:
 Catalogos/SPLUS_Table.csv
 ```
 
-O catálogo deve estar **corrigido pela extinção** e conter as seguintes colunas:
+O catálogo deve conter as seguintes colunas:
 
 | Coluna | Descrição |
 |--------|-----------|
@@ -163,51 +163,28 @@ O notebook `splus-table-morfoplus.ipynb` automatiza a preparação do catálogo 
 
 Se o catálogo não contiver as colunas `X`, `Y` ou `ID`, o `ejecutable.py` as calculará automaticamente usando o WCS dos frames baixados.
 
-### Query SQL para baixar fotometria do S-PLUS (DR4/DR5)
+### Download de dados do S-PLUS
 
-A query abaixo recupera as colunas morfológicas e fotométricas necessárias. Substituir `ra`, `dec` e `r_g` pelas coordenadas do centro do aglomerado e pelo raio de busca (em graus):
-
-```sql
-SELECT
-  det.ID, det.Field, det.RA, det.DEC, det.X, det.Y,
-  det.ELONGATION, det.ELLIPTICITY, det.THETA, det.A, det.B,
-  det.FLUX_RADIUS_50, det.FLUX_RADIUS_90,
-  u.u_petro, u.e_u_petro,
-  J0378.J0378_petro, J0378.e_J0378_petro,
-  J0395.J0395_petro, J0395.e_J0395_petro,
-  J0410.J0410_petro, J0410.e_J0410_petro,
-  J0430.J0430_petro, J0430.e_J0430_petro,
-  g.g_petro, g.e_g_petro,
-  J0515.J0515_petro, J0515.e_J0515_petro,
-  r.r_petro, r.e_r_petro,
-  J0660.J0660_petro, J0660.e_J0660_petro,
-  i.i_petro, i.e_i_petro,
-  J0861.J0861_petro, J0861.e_J0861_petro,
-  z.z_petro, z.e_z_petro,
-  pz.zml, pz.odds
-FROM idr4_dual.idr4_detection_image AS det
-  JOIN idr4_dual.idr4_dual_u      AS u      ON u.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0378  AS J0378  ON J0378.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_J0395  AS J0395  ON J0395.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_J0410  AS J0410  ON J0410.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_J0430  AS J0430  ON J0430.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_g      AS g      ON g.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0515  AS J0515  ON J0515.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_r      AS r      ON r.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0660  AS J0660  ON J0660.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_i      AS i      ON i.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0861  AS J0861  ON J0861.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_z      AS z      ON z.ID      = det.ID
-  JOIN idr4_vacs.idr4_photoz      AS pz     ON pz.ID     = det.ID
-WHERE 1 = CONTAINS(
-  POINT('ICRS', det.RA, det.DEC),
-  CIRCLE('ICRS', ra, dec, r_g)
-)
-```
+Os catálogos fotométricos e imagens do S-PLUS estão disponíveis em **https://splus.cloud**.
 
 ---
 
 ## 5. Configuração
+
+### Passo 0 — Configurar suas credenciais do S-PLUS
+
+Abra `config.py` e substitua os valores de exemplo pelos seus:
+
+```python
+SPLUS_USERNAME = "seu_usuario_aqui"   # ← seu nome de usuário no S-PLUS
+SPLUS_PASSWORD = "sua_senha_aqui"     # ← sua senha do S-PLUS
+```
+
+Cadastre-se em **https://splus.cloud** se ainda não tiver uma conta.
+
+> **Segurança:** `config.py` está listado no `.gitignore` e **nunca** será enviado ao repositório. Não compartilhe este arquivo nem cole seu conteúdo em issues ou pull requests.
+
+### Parâmetros de grade e download
 
 Todos os parâmetros da grade são definidos **apenas em `ejecutable.py`**. Não é necessário editar nenhum outro arquivo para uma execução padrão.
 
@@ -348,9 +325,9 @@ Esses scripts seguem a mesma estrutura de 12 filtros, mas trabalham sobre objeto
 
 ---
 
-## 10. Query SQL do S-PLUS
+## 10. Dados do S-PLUS
 
-Ver a [Seção 4](#4-catálogo-de-entrada) para a query SQL completa para baixar catálogos fotométricos do banco de dados do S-PLUS (DR4/DR5). A query retorna magnitudes petrosianas nas 12 bandas junto com parâmetros morfológicos e redshifts fotométricos.
+Os catálogos fotométricos e imagens do S-PLUS estão disponíveis em **https://splus.cloud**.
 
 ---
 

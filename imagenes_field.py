@@ -3,7 +3,11 @@ import matplotlib.pyplot as plt
 from astropy.table import *
 from astropy.io import fits
 import splusdata
-conn = splusdata.connect(usuario, contraseña)
+
+# Credentials are loaded from config.py — fill in your own username and
+# password there. That file is excluded from version control (.gitignore).
+from config import SPLUS_USERNAME, SPLUS_PASSWORD
+conn = splusdata.connect(SPLUS_USERNAME, SPLUS_PASSWORD)
 
 
 Fi=Table.read('Field_L17_simple_random_sample_5ene_selec.csv')

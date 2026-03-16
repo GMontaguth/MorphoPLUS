@@ -59,7 +59,10 @@ os.makedirs("Catalogos", exist_ok=True)
 
 
 # ===================== API CONNECTION =====================
-conn = splusdata.Core('gpardo', 'gNGC5054')
+# Credentials are loaded from config.py — fill in your own username and
+# password there. That file is excluded from version control (.gitignore).
+from config import SPLUS_USERNAME, SPLUS_PASSWORD
+conn = splusdata.Core(SPLUS_USERNAME, SPLUS_PASSWORD)
 
 
 # ===================== ROBUST EXCEPTION ALIAS =====================

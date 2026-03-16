@@ -19,7 +19,7 @@
 7. [Pipeline Description](#7-pipeline-description)
 8. [Output Files](#8-output-files)
 9. [Field Galaxy Sample (control)](#9-field-galaxy-sample-control)
-10. [S-PLUS SQL Query](#10-s-plus-sql-query)
+10. [S-PLUS Data](#10-s-plus-data)
 11. [Citation](#11-citation)
 12. [Troubleshooting](#12-troubleshooting)
 
@@ -113,6 +113,7 @@ MorphoPlus/
 │   ├── mask/                   # Binary mask FITS files
 │   └── psf/                    # Moffat PSF FITS files per filter
 ├── Out_img/                    # Output visualization images (SVG)
+├── config.py                   # ← YOUR credentials (never commit this file)
 ├── ejecutable.py
 ├── Recortar.py
 ├── mascara.py
@@ -140,7 +141,7 @@ Place your input table at:
 Catalogos/SPLUS_Table.csv
 ```
 
-The catalog must be **extinction-corrected** and contain the following columns:
+The catalog must contain the following columns:
 
 | Column | Description |
 |--------|-------------|
@@ -163,51 +164,28 @@ The notebook `splus-table-morfoplus.ipynb` automates the catalog preparation fro
 
 If the catalog does not already contain `X`, `Y`, or `ID` columns, `ejecutable.py` will compute them automatically using the WCS from downloaded field frames.
 
-### SQL query to download S-PLUS photometry (DR4/DR5)
+### Downloading S-PLUS data
 
-The following query retrieves the morphological and photometric columns needed. Replace `ra`, `dec`, and `r_g` with your cluster centre coordinates and search radius (in degrees):
-
-```sql
-SELECT
-  det.ID, det.Field, det.RA, det.DEC, det.X, det.Y,
-  det.ELONGATION, det.ELLIPTICITY, det.THETA, det.A, det.B,
-  det.FLUX_RADIUS_50, det.FLUX_RADIUS_90,
-  u.u_petro, u.e_u_petro,
-  J0378.J0378_petro, J0378.e_J0378_petro,
-  J0395.J0395_petro, J0395.e_J0395_petro,
-  J0410.J0410_petro, J0410.e_J0410_petro,
-  J0430.J0430_petro, J0430.e_J0430_petro,
-  g.g_petro, g.e_g_petro,
-  J0515.J0515_petro, J0515.e_J0515_petro,
-  r.r_petro, r.e_r_petro,
-  J0660.J0660_petro, J0660.e_J0660_petro,
-  i.i_petro, i.e_i_petro,
-  J0861.J0861_petro, J0861.e_J0861_petro,
-  z.z_petro, z.e_z_petro,
-  pz.zml, pz.odds
-FROM idr4_dual.idr4_detection_image AS det
-  JOIN idr4_dual.idr4_dual_u      AS u      ON u.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0378  AS J0378  ON J0378.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_J0395  AS J0395  ON J0395.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_J0410  AS J0410  ON J0410.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_J0430  AS J0430  ON J0430.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_g      AS g      ON g.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0515  AS J0515  ON J0515.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_r      AS r      ON r.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0660  AS J0660  ON J0660.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_i      AS i      ON i.ID      = det.ID
-  JOIN idr4_dual.idr4_dual_J0861  AS J0861  ON J0861.ID  = det.ID
-  JOIN idr4_dual.idr4_dual_z      AS z      ON z.ID      = det.ID
-  JOIN idr4_vacs.idr4_photoz      AS pz     ON pz.ID     = det.ID
-WHERE 1 = CONTAINS(
-  POINT('ICRS', det.RA, det.DEC),
-  CIRCLE('ICRS', ra, dec, r_g)
-)
-```
+S-PLUS photometric catalogs and images can be accessed at **https://splus.cloud**.
 
 ---
 
 ## 5. Configuration
+
+### Step 0 — Set your S-PLUS credentials
+
+Open `config.py` and replace the placeholder values with your own:
+
+```python
+SPLUS_USERNAME = "your_username_here"   # ← your S-PLUS username
+SPLUS_PASSWORD = "your_password_here"   # ← your S-PLUS password
+```
+
+Register at **https://splus.cloud** if you do not have an account yet.
+
+> **Security note:** `config.py` is listed in `.gitignore` and will never be committed to version control. Never share it or paste its contents in issues or pull requests.
+
+### Grid and download parameters
 
 All grid parameters are set in **`ejecutable.py`** only. You should not need to edit any other file for a standard run.
 
@@ -348,9 +326,9 @@ These scripts follow the same 12-filter structure but work on individual objects
 
 ---
 
-## 10. S-PLUS SQL Query
+## 10. S-PLUS Data
 
-See [Section 4](#4-input-catalog) for the full SQL query to download photometric catalogs from the S-PLUS database (DR4/DR5). The query returns petrosian magnitudes in all 12 bands along with morphological parameters and photometric redshifts.
+S-PLUS photometric catalogs and images can be accessed at **https://splus.cloud**.
 
 ---
 
