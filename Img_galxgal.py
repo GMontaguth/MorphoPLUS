@@ -27,7 +27,8 @@ import concurrent.futures
 
 import splusdata
 
-conn = splusdata.Core()
+from config import SPLUS_USERNAME, SPLUS_PASSWORD
+conn = splusdata.Core(SPLUS_USERNAME, SPLUS_PASSWORD)
 
 
 # ===================== CONFIGURATION =====================
@@ -69,7 +70,7 @@ def _download_stamp(ra_deg, dec_deg, src_id, field_name, banda,
         try:
             hdulist = conn.stamp(
                 ra=ra_deg, dec=dec_deg,
-                size=int(size_pix), band=banda, weight=False
+                size=int(size_pix), band=banda, weight=False, data_release=dr
             )
 
             # Science data is usually in extension [1]; fall back to [0]

@@ -4,38 +4,26 @@ ejecutable.py
 =============
 Entry point for MorphoPlus.
 
+This version keeps all the improvements of the parallel rewrite
+(stamp-based WCS, config.py, logging, safe-exec bash header, ...)
+but runs GALFITM **sequentially** via an explicit command list
+— same style as the original ejecutable.py — because parallel
+GALFITM was hanging.
+
 What this script does:
   1. Creates all required output directories.
   2. Reads Catalogos/SPLUS_Table.csv and adds ID, X, Y columns if missing
-     (X/Y are computed via WCS from the S-PLUS R-band frame).
+     (X/Y are computed via WCS from a tiny R-band stamp — fast).
   3. Generates ejecutable.sh — a fully autonomous bash script that runs
      the complete pipeline from image download to GALFITM output reading.
 
-Usage:
-    python ejecutable.py          # generates ejecutable.sh
-    chmod +x ejecutable.sh
-    ./ejecutable.sh               # runs everything end-to-end
-
 Pipeline stages inside ejecutable.sh:
   [1] python Recortar.py
-        Downloads all 12-filter field frames (parallel),
-        cuts the spatial grid, builds PSFs,
-        and generates dopsfex_mask_{field}.sh (SExtractor scripts).
-  [2] SExtractor scripts (dopsfex_mask_*.sh)
-        Run SExtractor on every detection image to produce segmentation maps.
+  [2] dopsfex_mask_*.sh   (SExtractor scripts, discovered dynamically)
   [3] python mascara.py
-        Builds binary masks from segmentation maps and generates
-        GALFITM input files (galfit_*.input) for every group position.
-        Also generates ejecutable_gal.sh for individual galaxies.
-  [4] GALFITM — group sub-images
-        Runs galfitm on every galfit_*_*_*.input file found on disk.
-  [5] GALFITM — individual galaxies  (only if ejecutable_gal.sh exists)
-        Runs galfitm galaxy-by-galaxy.
+  [4] GALFITM — group sub-images      <-- explicit sequential list
+  [5] GALFITM — individual galaxies   <-- chmod + ./ejecutable_gal.sh
   [6] python leer_header_output.py
-        Reads GALFITM output headers and writes the final CSV + SVG images.
-
-Note: stages [2] and [4] use shell 'find' loops so they discover files
-dynamically — no file names are hard-coded in the generated script.
 """
 
 import os
@@ -46,9 +34,11 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 import splusdata
 
+# Needed to precompute which galfit_*.input files mascara.py will create
+from table_generation import tables
+
 # ===================== CONFIGURATION =====================
-# These two parameters control the spatial grid used by the whole pipeline.
-# Edit ONLY here — all other scripts import c and size from this file.
+# Spatial grid — edit ONLY here. All scripts import c and size from this file.
 c    = [275, 825, 1375, 1925, 2475, 3025, 3575, 4125, 4675, 5225,
         5775, 6325, 6875, 7425, 7975, 8525, 9075, 9625, 10175, 10725]
 size = 550
@@ -57,7 +47,8 @@ size = 550
 GALFITM_BIN = "./galfitm-1.4.4-linux-x86_64"
 
 # ===================== API CONNECTION =====================
-conn = splusdata.Core()
+from config import SPLUS_USERNAME, SPLUS_PASSWORD
+conn = splusdata.Core(SPLUS_USERNAME, SPLUS_PASSWORD)
 
 # ===================== CATALOG =====================
 S       = Table.read('Catalogos/SPLUS_Table.csv')
@@ -69,10 +60,9 @@ Fields  = Dados_S.groups.keys
 
 def _get_wcs_header(field, ra, dec):
     """
-    Get the WCS header for a field by downloading a tiny 15×15 px R-band stamp.
-    This is orders of magnitude faster than downloading the full field frame
-    (~500 MB) that was previously used just to extract the header.
-    Tries DR6, DR5, DR4 in order.
+    Get the WCS header for a field by downloading a tiny 15x15 px R-band stamp.
+    Orders of magnitude faster than downloading the full field frame
+    just to extract a header. Tries DR6, DR5, DR4 in order.
     """
     for dr in ("dr6", "dr5", "dr4"):
         try:
@@ -84,10 +74,7 @@ def _get_wcs_header(field, ra, dec):
 
 
 def iauname(ra_deg, dec_deg):
-    """
-    Generate IAU-style source IDs of the form JHHMMSS.ss+DDMMSS.s
-    from arrays of RA and DEC in degrees.
-    """
+    """Generate IAU-style IDs JHHMMSS.ss+DDMMSS.s from RA/DEC arrays."""
     coords = SkyCoord(ra=ra_deg * u.deg, dec=dec_deg * u.deg)
     return np.array([
         f"J{c_obj.to_string('hmsdms', precision=2, sep='', pad=True).replace(' ', '')}"
@@ -96,17 +83,9 @@ def iauname(ra_deg, dec_deg):
 
 
 def add_missing_columns(S):
-    """
-    Add ID, X, and Y columns to the catalog if they are not already present.
-
-    ID  : IAU-style name from RA/DEC.
-    X/Y : Pixel coordinates computed from the S-PLUS R-band WCS for each field.
-
-    The updated catalog is written back to Catalogos/SPLUS_Table.csv.
-    """
+    """Add ID, X, Y columns to the catalog if they are not already present."""
     updated = False
 
-    # --- ID column ---
     if 'ID' not in S.colnames:
         print("[INFO] Creating ID column from RA/DEC...")
         S['ID'] = iauname(np.array(S['ra']), np.array(S['dec']))
@@ -114,11 +93,10 @@ def add_missing_columns(S):
     else:
         print("[INFO] ID column already present.")
 
-    # --- X and Y columns ---
     if 'X' not in S.colnames or 'Y' not in S.colnames:
         print("[INFO] Computing pixel coordinates X, Y via WCS...")
 
-        grouped = S.group_by('Field')
+        grouped     = S.group_by('Field')
         field_names = grouped.groups.keys['Field']
 
         X_all = np.full(len(S), np.nan)
@@ -129,13 +107,13 @@ def add_missing_columns(S):
             subtable   = S[mask_field]
 
             try:
-                ra0  = float(subtable['ra'][0])
-                dec0 = float(subtable['dec'][0])
+                ra0    = float(subtable['ra'][0])
+                dec0   = float(subtable['dec'][0])
                 header = _get_wcs_header(field, ra0, dec0)
                 wcs    = WCS(header)
                 coords = SkyCoord(
-                    ra=np.array(subtable['ra'])  * u.deg,
-                    dec=np.array(subtable['dec']) * u.deg
+                    ra  = np.array(subtable['ra'])  * u.deg,
+                    dec = np.array(subtable['dec']) * u.deg
                 )
                 x, y = wcs.world_to_pixel(coords)
                 X_all[mask_field] = x
@@ -160,35 +138,72 @@ def add_missing_columns(S):
 
 # ===================== SCRIPT GENERATOR =====================
 
+def _build_galfit_command_list():
+    """
+    Old-style: precompute the list of GALFITM commands by iterating the
+    spatial grid and calling tables() for every (field, position).
+    One explicit command per input file — no find loops, no parallelism.
+
+    Returns
+    -------
+    group_cmds : list of str
+        Pairs of ('chmod 777 <input>', '<galfitm> <input>') lines.
+    has_individual : bool
+        True if at least one position contains individual galaxies,
+        i.e. ejecutable_gal.sh will be generated by mascara.py.
+    """
+    group_cmds     = []
+    has_individual = False
+    n_positions    = 0
+
+    for f in Fields:
+        field = f[0]
+        for j in range(len(c)):
+            for k in range(len(c)):
+                position = (c[j], c[k])
+                Tablef, Tabled = tables(S, field, position, size)
+
+                if len(Tablef) > 0:
+                    inp = f"galfit_{position[0]}_{position[1]}_{field}.input"
+                    group_cmds.append(f"chmod 777 {inp}")
+                    group_cmds.append(f"{GALFITM_BIN} {inp}")
+                    n_positions += 1
+
+                if len(Tabled) > 0:
+                    has_individual = True
+
+    print(f"[INFO] Predicted {n_positions} GALFITM group fits.")
+    print(f"[INFO] Individual galaxies present: {has_individual}")
+    return group_cmds, has_individual
+
+
 def generate_ejecutable_sh():
     """
-    Write ejecutable.sh — a fully autonomous bash script that runs the
-    complete MorphoPlus pipeline without any manual intervention.
+    Write ejecutable.sh — runs the full pipeline end-to-end.
 
-    Design principles:
-      - Uses 'set -euo pipefail' so the script stops on any error.
-      - Each stage is wrapped in a timestamped log block.
-      - SExtractor scripts and GALFITM inputs are discovered dynamically
-        with 'find' loops — no filenames are hard-coded.
-      - A log file (morphoplus_run.log) records stdout + stderr.
-      - Exit codes are checked after each critical stage.
+    Stages 1-3 and 6 use dynamic file discovery (same as the parallel
+    version). Stages 4 and 5 use an explicit command list built at
+    ejecutable.py time (old-style, sequential).
+
+    `set -euo pipefail` is active for housekeeping stages, but is
+    temporarily relaxed around GALFITM calls so that a single failed
+    fit does not kill the whole pipeline.
     """
+    galfit_group_cmds, has_individual_galaxies = _build_galfit_command_list()
 
     lines = [
         "#!/bin/bash",
         "# ==========================================================================",
-        "# ejecutable.sh — MorphoPlus autonomous pipeline",
-        "# Generated automatically by ejecutable.py — do not edit by hand.",
+        "# ejecutable.sh - MorphoPlus autonomous pipeline",
+        "# Generated automatically by ejecutable.py - do not edit by hand.",
+        "#",
+        "# GALFITM stages run SEQUENTIALLY via an explicit command list.",
         "# ==========================================================================",
         "",
-        "# Stop immediately if any command fails, an unset variable is used,",
-        "# or any command in a pipeline fails.",
         "set -euo pipefail",
         "",
-        "# Redirect all output (stdout + stderr) to a log file AND the terminal.",
         "exec > >(tee -a morphoplus_run.log) 2>&1",
         "",
-        "# Helper: print a timestamped stage banner.",
         'log_stage() { echo ""; echo "========================================'
         '================================"; '
         'echo "[$(date \'+%Y-%m-%d %H:%M:%S\')] STAGE $1: $2"; '
@@ -200,78 +215,85 @@ def generate_ejecutable_sh():
         'echo "Python: $(python --version)"',
         "",
 
-        # ── STAGE 1: Recortar.py ──────────────────────────────────────────────
+        # --- STAGE 1 -------------------------------------------------
         'log_stage 1 "Download images, cut grid, build PSFs, run segmentation"',
         "python Recortar.py",
         'echo "[OK] Recortar.py finished."',
         "",
 
-        # ── STAGE 2: SExtractor — group positions ────────────────────────────
+        # --- STAGE 2 -------------------------------------------------
         'log_stage 2 "Run SExtractor on group sub-images (dopsfex_mask_*.sh)"',
-        "# dopsfex_mask_{field}.sh scripts are generated dynamically by",
-        "# segmetation.py (called from Recortar.py). We discover them here.",
         "NSEX=0",
         'for sh_file in dopsfex_mask_*.sh; do',
-        '    [ -f "$sh_file" ] || continue   # skip if glob matched nothing',
+        '    [ -f "$sh_file" ] || continue',
         '    echo "[SEX] Running $sh_file ..."',
         '    chmod +x "$sh_file"',
         '    bash "$sh_file"',
         '    NSEX=$((NSEX + 1))',
         "done",
-        'echo "[OK] SExtractor done — ran $NSEX script(s)."',
+        'echo "[OK] SExtractor done - ran $NSEX script(s)."',
         "",
 
-        # ── STAGE 3: mascara.py ───────────────────────────────────────────────
+        # --- STAGE 3 -------------------------------------------------
         'log_stage 3 "Build masks and generate GALFITM input files (mascara.py)"',
         "python mascara.py",
         'echo "[OK] mascara.py finished."',
         "",
 
-        # ── STAGE 4: GALFITM — group sub-images ──────────────────────────────
-        'log_stage 4 "Run GALFITM on group sub-images (galfit_*_*_*.input)"',
-        "# galfit_*.input files are generated by mascara.py.",
-        "# We discover them dynamically so no position is hard-coded.",
-        "NGALFIT=0",
-        'for inp in galfit_*_*_*.input; do',
-        '    [ -f "$inp" ] || continue',
-        '    echo "[GALFITM] $inp ..."',
-        f'    {GALFITM_BIN} "$inp"',
-        '    NGALFIT=$((NGALFIT + 1))',
-        "done",
-        'echo "[OK] GALFITM group stage done — ran $NGALFIT fit(s)."',
+        # --- STAGE 4 : EXPLICIT SEQUENTIAL GALFITM LIST --------------
+        'log_stage 4 "Run GALFITM on group sub-images (sequential, explicit list)"',
+        '# One explicit chmod + galfitm call per predicted input file.',
+        '# Any single failure is logged but does not abort the pipeline.',
+        "set +e",
+    ]
+
+    # Inject the precomputed old-style command list
+    lines.extend(galfit_group_cmds)
+
+    lines.extend([
+        "set -e",
+        'echo "[OK] GALFITM group stage done."',
         "",
 
-        # ── STAGE 5: GALFITM — individual galaxies (optional) ────────────────
+        # --- STAGE 5 : individual galaxies, old style ---------------
         'log_stage 5 "Run GALFITM on individual galaxies (ejecutable_gal.sh)"',
-        "# ejecutable_gal.sh is generated by mascara.py / Img_galxgal.py",
-        "# only when isolated galaxies are present. Skip if it doesn't exist.",
-        'if [ -f "ejecutable_gal.sh" ]; then',
-        '    chmod +x ejecutable_gal.sh',
-        '    bash ejecutable_gal.sh',
-        '    echo "[OK] Individual galaxy GALFITM stage done."',
-        "else",
-        '    echo "[SKIP] ejecutable_gal.sh not found — no individual galaxies to fit."',
-        "fi",
-        "",
+    ])
 
-        # ── STAGE 6: leer_header_output.py ───────────────────────────────────
+    if has_individual_galaxies:
+        lines.extend([
+            'if [ -f "ejecutable_gal.sh" ]; then',
+            '    chmod 777 ejecutable_gal.sh',
+            '    set +e',
+            '    ./ejecutable_gal.sh',
+            '    set -e',
+            '    echo "[OK] Individual galaxies done."',
+            'else',
+            '    echo "[WARN] ejecutable_gal.sh was predicted but not found."',
+            'fi',
+            "",
+        ])
+    else:
+        lines.extend([
+            'echo "[SKIP] No individual galaxies predicted by tables()."',
+            "",
+        ])
+
+    # --- STAGE 6 ----------------------------------------------------
+    lines.extend([
         'log_stage 6 "Read GALFITM outputs and write result catalog"',
         "python leer_header_output.py",
         'echo "[OK] leer_header_output.py finished."',
         "",
-
-        # ── Done ──────────────────────────────────────────────────────────────
         'log_stage 7 "Pipeline complete"',
         'echo "Results: Catalogos/GalfitM_output.csv"',
         'echo "Images:  Out_img/"',
         'echo "Log:     morphoplus_run.log"',
-    ]
+    ])
 
     with open("ejecutable.sh", "w") as fic:
         for line in lines:
             fic.write(line + "\n")
 
-    # Make it executable right away so the user doesn't need chmod
     os.chmod("ejecutable.sh", 0o755)
     print("[INFO] ejecutable.sh written and marked as executable.")
     print("[INFO] Run with:  ./ejecutable.sh")

@@ -37,7 +37,8 @@ from ejecutable import c, size
 from table_generation import tables
 
 # ===================== API CONNECTION =====================
-conn = splusdata.Core()
+from config import SPLUS_USERNAME, SPLUS_PASSWORD
+conn = splusdata.Core(SPLUS_USERNAME, SPLUS_PASSWORD)
 
 # ===================== INPUT CATALOG =====================
 S = Table.read('Catalogos/SPLUS_Table.csv')

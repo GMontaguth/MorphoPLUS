@@ -1,57 +1,70 @@
+# -*- coding: utf-8 -*-
+"""
+leer_header_output.py
+=====================
+Reads GALFITM output files and writes the final result catalog + SVG images.
+
+Two types of output files are processed:
+  1. Group sub-images  : Galfitm_{cx}_{cy}_{field}.fits
+  2. Individual galaxies: Gal_{ID}.fits
+
+Usage:
+    python leer_header_output.py
+"""
+
 from astropy.table import Table
 from astropy.io import ascii, fits
 import numpy as np
 import os
-
 import matplotlib.pyplot as plt
 from matplotlib import colors
 
-# -----------------------------
-# Config
-# -----------------------------
-CAT_IN   = "Catalogos/g_S.csv"
-OUT_CSV  = "Catalogos/GalfitM_output.csv"
+from ejecutable import c, size, S
+from table_generation import tables
 
-FITS_FMT = "Gal_{id}.fits"
-BAND_FMT = "Gal_{id}.galfit.01.band"
-
-Fil_name = np.array(['R','J0378','J0395','J0410','J0430','J0515','J0660','J0861','G','I','Z','U'])
-Bands = Fil_name  # tu grafico_i usa Bands[j]
-
+# =============================================================================
+# CONFIG
+# =============================================================================
+OUT_CSV     = "Catalogos/GalfitM_output.csv"
 OUT_IMG_DIR = "Out_img"
 MAKE_IMAGES = True
+
 os.makedirs(OUT_IMG_DIR, exist_ok=True)
 
-# -----------------------------
-# Helpers
-# -----------------------------
-def correct_image_orientation(img2d):
-    # Poné tu versión real si corresponde
-    return img2d
+# Filter arrays — order must match GALFITM band order
+Fil_name = np.array(['R','J0378','J0395','J0410','J0430','J0515',
+                     'J0660','J0861','G','I','Z','U'])
+Bands    = np.array(['U','F378','F395','F410','F430','G',
+                     'F515','R','F660','I','F861','Z'])
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+def correct_image_orientation(image):
+    """Flip image vertically to match display convention."""
+    return np.flipud(image)
 
 
 def get_chi2nu(band_path):
-    """
-    Lee Chi^2/nu desde el archivo .band.
-    Devuelve float o np.nan si no lo encuentra.
-    """
+    """Read Chi^2/nu from a .galfit.01.band file. Returns nan if not found."""
     try:
         with open(band_path, "r") as f:
             for line in f:
-                if "Chi^2/nu" in line:
+                if "Chi^2/nu =" in line:
                     return float(line.split("=")[1].split(",")[0].strip())
     except (FileNotFoundError, OSError):
-        return np.nan
+        pass
     return np.nan
 
 
 def leer_header(NGAL, HEADER, ID, Field_ID, data):
     """
-    Agrega parámetros por cada filtro desde el header.
+    Append GALFITM Sersic parameters for all 12 bands from FITS header.
+    NGAL: galaxy index within the group (1-based).
     """
     data.append(ID)
     data.append(Field_ID)
-
     for i in range(12):
         xc = HEADER[f"{NGAL}_XC_{Fil_name[i]}"].split()
         yc = HEADER[f"{NGAL}_YC_{Fil_name[i]}"].split()
@@ -60,22 +73,21 @@ def leer_header(NGAL, HEADER, ID, Field_ID, data):
         N  = HEADER[f"{NGAL}_n_{Fil_name[i]}"].split()
         ar = HEADER[f"{NGAL}_AR_{Fil_name[i]}"].split()
         PA = HEADER[f"{NGAL}_PA_{Fil_name[i]}"].split()
-
-        data.append(xc[0]); data.append(xc[2])
-        data.append(yc[0]); data.append(yc[2])
-        data.append(R[0]);  data.append(R[2])
-        data.append(m[0]);  data.append(m[2])
-        data.append(N[0]);  data.append(N[2])
-        data.append(ar[0]); data.append(ar[2])
-        data.append(PA[0]); data.append(PA[2])
-
+        data.extend([xc[0], xc[2],
+                     yc[0], yc[2],
+                     R[0],  R[2],
+                     m[0],  m[2],
+                     N[0],  N[2],
+                     ar[0], ar[2],
+                     PA[0], PA[2]])
     return data
 
 
 def build_header_names():
-    header_names = ["CHI2NU", "ID", "Field_ID"]
+    """Column names for the output CSV."""
+    names = ["CHI2NU", "ID", "Field_ID"]
     for i in range(12):
-        header_names += [
+        names += [
             f"XC_{Fil_name[i]}",  f"e_XC_{Fil_name[i]}",
             f"YC_{Fil_name[i]}",  f"e_YC_{Fil_name[i]}",
             f"RE_{Fil_name[i]}",  f"e_RE_{Fil_name[i]}",
@@ -84,115 +96,184 @@ def build_header_names():
             f"AR_{Fil_name[i]}",  f"e_AR_{Fil_name[i]}",
             f"PA_{Fil_name[i]}",  f"e_PA_{Fil_name[i]}",
         ]
-    return header_names
+    return names
 
 
-# -----------------------------
-# Tu función (tal cual, solo cambié el path a OUT_IMG_DIR)
-# -----------------------------
-def grafico_i(f, position, field, Tabled, r):
+def _imshow_band(ax, data2d, j):
+    """Display one band image with SymLogNorm."""
+    lt = [0.003,0.003,0.003,0.003,0.003,0.04,0.04,0.01,0.004,0.01,0.08,0.05]
+    ls = [0.003,0.003,0.003,0.003,0.003,0.04,0.04,0.01,0.004,0.01,0.08,0.05]
+    ax.imshow(data2d, cmap='gray',
+              norm=colors.SymLogNorm(linthresh=lt[j], linscale=ls[j],
+                                     vmin=-1.0, vmax=5.0))
+    ax.set_xticks([]); ax.set_yticks([])
+
+
+def grafico_g(fi, position, field, Tablef, k):
+    """
+    Plot for a galaxy inside a group sub-image.
+    Centres the cutout on the galaxy pixel coordinates from the catalog.
+    """
+    npix = 50
     fig, axs = plt.subplots(3, 12, figsize=(20, 8), sharex=True, sharey=True)
 
-    vmax = [5.0]*12
-    vmin = [-1.0]*12
-    lt   = [0.003,0.003,0.003,0.003,0.003,0.04,0.04,0.01,0.004,0.01,0.08,0.05]
-    ls   = [0.003,0.003,0.003,0.003,0.003,0.04,0.04,0.01,0.004,0.01,0.08,0.05]
-    npix = 50
-
     for j in range(12):
-        fin = f[j].data
-        fic_n = correct_image_orientation(fin)
+        x = Tablef[k]['X']
+        y = len(fi[j].data) - Tablef[k]['Y']
+        y1 = max(y - npix, 0)
+        x1 = max(x - npix, 0)
 
-        x = 100
-        y = 100
+        fic   = correct_image_orientation(fi[j].data)
+        fic2  = correct_image_orientation(fi[12 + j].data)
+        fic3  = correct_image_orientation(fi[24 + j].data)
 
-        axs[0, j].imshow(
-            fic_n[int(y-npix):int(y+npix), int(x-npix):int(x+npix)],
-            cmap='gray',
-            norm=colors.SymLogNorm(linthresh=lt[j], linscale=ls[j], vmin=vmin[j], vmax=vmax[j])
-        )
+        for row_ax, img in zip([0, 1, 2], [fic, fic2, fic3]):
+            _imshow_band(axs[row_ax, j],
+                         img[int(y1):int(y+npix), int(x1):int(x+npix)], j)
+
         axs[0, j].set_title(f'Filter {Bands[j]}', fontsize=8)
 
-        fin_2 = f[12 + j].data
-        fic_2n = correct_image_orientation(fin_2)
-        axs[1, j].imshow(
-            fic_2n[int(y-npix):int(y+npix), int(x-npix):int(x+npix)],
-            cmap='gray',
-            norm=colors.SymLogNorm(linthresh=lt[j], linscale=ls[j], vmin=vmin[j], vmax=vmax[j])
-        )
+    # Scale bar on first panel
+    axs[0, 0].text(1, 11, '5.5"', fontsize=10, color='blue')
+    axs[0, 0].plot([1, 11], [2, 2], 'b-', lw=3)
 
-        fin_3 = f[24 + j].data
-        fic_3n = correct_image_orientation(fin_3)
-        axs[2, j].imshow(
-            fic_3n[int(y-npix):int(y+npix), int(x-npix):int(x+npix)],
-            cmap='gray',
-            norm=colors.SymLogNorm(linthresh=lt[j], linscale=ls[j], vmin=vmin[j], vmax=vmax[j])
-        )
-
-        for rr in range(3):
-            axs[rr, j].set_xticks([])
-            axs[rr, j].set_yticks([])
-
-    out_svg = os.path.join(OUT_IMG_DIR, f"{int(position[0])}_{int(position[1])}_{field}.svg")
+    out_svg = os.path.join(
+        OUT_IMG_DIR,
+        f"{int(position[0])}_{int(position[1])}_{field}_{Tablef['ID'][k]}_{k}.svg"
+    )
     plt.tight_layout()
     plt.savefig(out_svg, format='svg', dpi=1200)
     plt.close()
     return out_svg
 
 
-# -----------------------------
-# Main
-# -----------------------------
-galcat = Table.read(CAT_IN)
+def grafico_i(fi, position, field, Tabled, r):
+    """
+    Plot for an individual (isolated) galaxy.
+    Centres at pixel (100, 100) — the stamp centre.
+    """
+    npix = 50
+    x, y = 100, 100
+    fig, axs = plt.subplots(3, 12, figsize=(20, 8), sharex=True, sharey=True)
 
-ID_COL = "ID"
-FIELD_COL = "Field_ID" if "Field_ID" in galcat.colnames else None
+    for j in range(12):
+        fic  = correct_image_orientation(fi[j].data)
+        fic2 = correct_image_orientation(fi[12 + j].data)
+        fic3 = correct_image_orientation(fi[24 + j].data)
+
+        for row_ax, img in zip([0, 1, 2], [fic, fic2, fic3]):
+            _imshow_band(axs[row_ax, j],
+                         img[int(y-npix):int(y+npix), int(x-npix):int(x+npix)], j)
+
+        axs[0, j].set_title(f'Filter {Bands[j]}', fontsize=8)
+
+    out_svg = os.path.join(
+        OUT_IMG_DIR,
+        f"{int(position[0])}_{int(position[1])}_{field}_{Tabled['ID'][r]}.svg"
+    )
+    plt.tight_layout()
+    plt.savefig(out_svg, format='svg', dpi=1200)
+    plt.close()
+    return out_svg
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
 
 Tabla = []
 
-for k, row in enumerate(galcat):
-    gid = str(row[ID_COL])
-    fits_path = FITS_FMT.format(id=gid)
-    band_path = BAND_FMT.format(id=gid)
+S_cat   = Table.read('Catalogos/SPLUS_Table.csv')
+Datos_S = S_cat.group_by('Field')
+Fields  = Datos_S.groups.keys
 
-    field_id = str(row[FIELD_COL]) if FIELD_COL is not None else gid
+for f in Fields:
+    field = f[0]
 
-    # solo para el nombre del archivo (tu grafico_i no usa position para centrar)
-    position = (k, k)
+    for j in range(len(c)):
+        for k in range(len(c)):
+            position  = (c[j], c[k])
+            Tablef, Tabled = tables(S_cat, field, position, size)
 
-    fi = None
-    try:
-        fi = fits.open(fits_path)
+            # ------------------------------------------------------------------
+            # Type 1 — Group sub-image: Galfitm_{cx}_{cy}_{field}.fits
+            # ------------------------------------------------------------------
+            if len(Tablef) > 0:
+                fits_path = f"Galfitm_{position[0]}_{position[1]}_{field}.fits"
+                band_path = f"Galfitm_{position[0]}_{position[1]}_{field}.galfit.01.band"
+                fi = None
+                try:
+                    fi = fits.open(fits_path)
+                    chi2_nu = get_chi2nu(band_path)
 
-        # CSV: header como venías
-        hdr = fi[12].header
-        chi2_nu = get_chi2nu(band_path)
-        data = [chi2_nu]
-        Tabla.append(leer_header(1, hdr, gid, field_id, data))
+                    for i in range(len(Tablef)):
+                        data = [chi2_nu]
+                        Tabla.append(
+                            leer_header(
+                                i + 1,
+                                fi[12].header,
+                                Tablef['ID'][i],
+                                f"{position[0]}_{position[1]}_{field}",
+                                data
+                            )
+                        )
 
-        # IMGs: llamar tu función
-        if MAKE_IMAGES:
-            if len(fi) < 36:
-                print(f"[SKIP IMG] ID={gid} | FITS tiene {len(fi)} HDUs, pero grafico_i necesita >= 36.")
-            else:
-                out_svg = grafico_i(fi, position, field_id, galcat, k)
-                print(f"[IMG] guardada: {out_svg}")
+                    if MAKE_IMAGES:
+                        if len(fi) < 36:
+                            print(f"[SKIP IMG] {fits_path} — only {len(fi)} HDUs, need >= 36.")
+                        else:
+                            for i in range(len(Tablef)):
+                                out_svg = grafico_g(fi, position, field, Tablef, i)
+                                print(f"[IMG] {out_svg}")
 
-        fi.close()
+                except (FileNotFoundError, OSError) as e:
+                    print(f"[SKIP] {fits_path}: {e}")
+                finally:
+                    if fi is not None:
+                        fi.close()
 
-    except (FileNotFoundError, OSError, IndexError, KeyError) as e:
-        print(f"[SKIP] ID={gid} | problema leyendo {fits_path} o header: {e}")
-        try:
-            if fi is not None:
-                fi.close()
-        except Exception:
-            pass
-        continue
+            # ------------------------------------------------------------------
+            # Type 2 — Individual galaxies: Gal_{ID}.fits
+            # ------------------------------------------------------------------
+            if len(Tabled) > 0:
+                for r in range(len(Tabled)):
+                    gid       = Tabled['ID'][r]
+                    fits_path = f"Gal_{gid}.fits"
+                    band_path = f"Gal_{gid}.galfit.01.band"
+                    fi = None
+                    print(f"[GAL] {fits_path}")
+                    try:
+                        fi = fits.open(fits_path)
+                        chi2_nu = get_chi2nu(band_path)
+                        data = [chi2_nu]
+                        Tabla.append(
+                            leer_header(
+                                1,
+                                fi[12].header,
+                                gid,
+                                f"{position[0]}_{position[1]}_{field}",
+                                data
+                            )
+                        )
 
+                        if MAKE_IMAGES:
+                            if len(fi) < 36:
+                                print(f"[SKIP IMG] {fits_path} — only {len(fi)} HDUs.")
+                            else:
+                                out_svg = grafico_i(fi, position, field, Tabled, r)
+                                print(f"[IMG] {out_svg}")
 
+                    except (FileNotFoundError, OSError) as e:
+                        print(f"[SKIP] {fits_path}: {e}")
+                    finally:
+                        if fi is not None:
+                            fi.close()
+
+# =============================================================================
+# WRITE OUTPUT CSV
+# =============================================================================
 header_names = build_header_names()
-table_out = Table(rows=Tabla, names=header_names)
+table_out    = Table(rows=Tabla, names=header_names)
 
-ascii.write(table_out, OUT_CSV, format="csv", fast_writer=False, overwrite=True)
-print(f"Listo: guardé {len(table_out)} filas en {OUT_CSV}")
-
+ascii.write(table_out, OUT_CSV, format='csv', fast_writer=False, overwrite=True)
+print(f"\n[Done] {len(table_out)} rows saved to '{OUT_CSV}'.")

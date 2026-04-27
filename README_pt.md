@@ -18,10 +18,11 @@
 6. [Execução do pipeline](#6-execução-do-pipeline)
 7. [Descrição do pipeline](#7-descrição-do-pipeline)
 8. [Arquivos de saída](#8-arquivos-de-saída)
-9. [Amostra de galáxias de campo (controle)](#9-amostra-de-galáxias-de-campo-controle)
-10. [Dados do S-PLUS](#10-dados-do-s-plus)
-11. [Citação](#11-citação)
-12. [Solução de problemas](#12-solução-de-problemas)
+9. [Scripts de recuperação e utilidades](#9-scripts-de-recuperação-e-utilidades)
+10. [Amostra de galáxias de campo (controle)](#10-amostra-de-galáxias-de-campo-controle)
+11. [Dados do S-PLUS](#11-dados-do-s-plus)
+12. [Citação](#12-citação)
+13. [Solução de problemas](#13-solução-de-problemas)
 
 ---
 
@@ -115,7 +116,7 @@ MorphoPlus/
 │   └── psf/                    # PSFs Moffat em formato FITS por filtro
 ├── Out_img/                    # criado automaticamente por ejecutable.py
 ├── config.py                   # ← SUAS credenciais (nunca subir ao git)
-├── ejecutable.py
+├── ejecutable.py               # driver principal — gera ejecutable.sh
 ├── Recortar.py
 ├── mascara.py
 ├── segmetation.py
@@ -123,9 +124,12 @@ MorphoPlus/
 ├── leer_header_output.py
 ├── Img_galxgal.py
 ├── psf_new.py
+├── count_fits.py               # verificação de progresso (galáxias prontas vs. faltantes)
+├── generate_missing_fits.py    # recuperação: regera .sh com os GALFITM pendentes
+├── generate_psf_from_field.py  # recuperação: reconstrói uma PSF faltante a partir de uma imagem de campo
 ├── gauss_5_0_9x9.conv          # Filtro de convolução para o SExtractor
 ├── sextopsfex.param            # Arquivo de parâmetros do SExtractor
-└── galfitm-1.4.4-linux-x86_64 # Binário do GALFITM
+└── galfitm-1.4.4-linux-x86_64  # Binário do GALFITM
 ```
 
 ```bash
@@ -193,6 +197,7 @@ Todos os parâmetros da grade são definidos **apenas em `ejecutable.py`**. Não
 |-----------|---------|-----------|
 | `size` | `ejecutable.py` | Lado de cada sub-imagem em pixels. Padrão: `550`. |
 | `c` | `ejecutable.py` | Lista de centros da grade (pixels). Padrão: 20 posições de 275 a 10725 em passos de 550. |
+| `GALFITM_BIN` | `ejecutable.py` | Caminho/nome do binário do GALFITM. Padrão: `./galfitm-1.4.4-linux-x86_64`. |
 | `MAX_WORKERS` | `Recortar.py` | Threads paralelas para download dos filtros. Padrão: `6`. Reduzir para 3–4 se a API do S-PLUS retornar erros de rate limit. |
 | `DR` | `Recortar.py` | Data release preferido do S-PLUS. Padrão: `"dr6"`. Fallbacks são testados automaticamente. |
 | `MAX_RETRIES` | `Recortar.py` | Tentativas máximas de download por filtro. Padrão: `5`. |
@@ -209,24 +214,27 @@ python ejecutable.py
 
 Este script:
 - Lê `Catalogos/SPLUS_Table.csv`
-- Calcula as coordenadas em pixels (X, Y) via WCS se estiverem ausentes
+- Calcula as coordenadas em pixels (X, Y) via WCS se estiverem ausentes (usando um stamp pequeno de 15×15 px na banda R — muito mais rápido que baixar o campo inteiro)
+- Pré-calcula a lista explícita de comandos GALFITM iterando sobre a grade espacial
 - Gera `ejecutable.sh` com todos os comandos para a execução completa
 
 ### Passo 2 — Executar o pipeline completo
 
 ```bash
+chmod +wrx ejecutable.sh
 ./ejecutable.sh
 ```
 
-O `ejecutable.sh` executa a seguinte sequência automaticamente:
+O `ejecutable.sh` executa as seguintes etapas automaticamente, com logging em `morphoplus_run.log`:
 
-1. Baixa as 12 imagens por campo em paralelo
-2. Recorta sub-imagens na grade espacial
-3. Constrói PSFs Moffat a partir dos keywords do header FITS
-4. Executa o SExtractor para gerar mapas de segmentação
-5. Cria máscaras binárias (`mascara.py`)
-6. Gera os arquivos de entrada do GALFITM (`.input`)
-7. Executa o GALFITM em cada sub-imagem
+1. **Etapa 1** — Baixa as 12 imagens por campo em paralelo, recorta sub-imagens na grade espacial e constrói PSFs Moffat a partir do header FITS (`Recortar.py`)
+2. **Etapa 2** — Executa os scripts do SExtractor (`dopsfex_mask_*.sh`) para gerar mapas de segmentação
+3. **Etapa 3** — Cria máscaras binárias e arquivos de entrada do GALFITM (`mascara.py`)
+4. **Etapa 4** — Executa o GALFITM **sequencialmente** em cada sub-imagem de grupo usando uma lista de comandos explícita e pré-calculada. Falhas de ajustes individuais são logadas mas não abortam o pipeline (`set +e` está ativo nesta etapa)
+5. **Etapa 5** — Executa o GALFITM galáxia por galáxia via `ejecutable_gal.sh` (apenas se existir)
+6. **Etapa 6** — Lê os headers de saída do GALFITM e escreve o catálogo final de resultados (`leer_header_output.py`)
+
+> **Por que GALFITM sequencial?** Versões anteriores do pipeline tentavam paralelizar as chamadas ao GALFITM, mas isso causava travamentos. A versão atual usa uma lista de comandos explícita e sequencial — mais lenta, mas robusta.
 
 ### Passo 3 — Ler os resultados do GALFITM
 
@@ -249,7 +257,7 @@ SPLUS_Table.csv
       │
       ▼
 ejecutable.py ──────────────────────────── gera ejecutable.sh
-      │
+      │                                    (com lista explícita de comandos GALFITM)
       ▼
 ./ejecutable.sh
   │
@@ -263,10 +271,10 @@ ejecutable.py ──────────────────────
   ├─ [Etapa 3] mascara.py
   │     Máscaras binárias + inputs do GALFITM + ejecutable_gal.sh
   │
-  ├─ [Etapa 4] galfitm galfit_*_*_*.input
+  ├─ [Etapa 4] galfitm galfit_*_*_*.input   (sequencial, set +e)
   │     Ajuste multi-banda de Sérsic para sub-imagens de grupos
   │
-  ├─ [Etapa 5] ejecutable_gal.sh  (somente se existir)
+  ├─ [Etapa 5] ejecutable_gal.sh   (somente se existir)
   │     GALFITM galáxia por galáxia
   │
   └─ [Etapa 6] leer_header_output.py
@@ -307,15 +315,92 @@ Para galáxias na lista `Catalogos/g_S.csv` (detectadas como isoladas ou em grup
 | `Field_Img/det/*.fits` | Imagens de detecção (soma G+R+Z) e mapas de segmentação |
 | `Field_Img/mask/*.fits` | Máscaras binárias |
 | `Field_Img/psf/*.fits` | PSFs Moffat |
-| `galfit_*.input` | Arquivos de entrada do GALFITM |
-| `Galfitm_*.fits` | FITS de saída do GALFITM (entrada / modelo / resíduo) |
+| `galfit_*.input` | Arquivos de entrada do GALFITM (sub-imagens de grupo) |
+| `Gal_*.input` | Arquivos de entrada do GALFITM (galáxias individuais) |
+| `Galfitm_*.fits` | FITS de saída do GALFITM para grupos (entrada / modelo / resíduo) |
+| `Gal_*.fits` | FITS de saída do GALFITM para galáxias individuais |
 | `Out_img/*.svg` | Imagens de visualização de três painéis |
 | `ejecutable.sh` | Script de execução gerado automaticamente |
 | `dopsfex_mask_*.sh` | Scripts do SExtractor gerados automaticamente |
+| `morphoplus_run.log` | Log completo da execução (criado por `ejecutable.sh`) |
 
 ---
 
-## 9. Amostra de galáxias de campo (controle)
+## 9. Scripts de recuperação e utilidades
+
+O GALFITM roda sobre centenas de sub-imagens e galáxias individuais, e uma execução completa pode levar várias horas. Para suportar execuções longas e se recuperar de interrupções (quedas de energia, processos terminados, PSFs faltantes, ...), o pipeline inclui três utilitários pequenos.
+
+### 9.1 `count_fits.py` — verificação de progresso
+
+Conta quantos arquivos `.fits` de saída do GALFITM existem em disco, comparado com quantos são esperados pelo catálogo. Útil a qualquer momento para verificar o avanço do pipeline.
+
+```bash
+python count_fits.py
+```
+
+Saída típica:
+
+```
+GALFITM .fits: 312/400
+  Grupos: 290/378
+  Indiv:  22/22
+⏳ 78.0%
+```
+
+Quando tudo está completo:
+
+```
+GALFITM .fits: 400/400
+  Grupos: 378/378
+  Indiv:  22/22
+✅ COMPLETO
+```
+
+### 9.2 `generate_missing_fits.py` — retomar após uma queda
+
+Se o GALFITM for interrompido no meio da execução (queda de energia, processo terminado, reinício do sistema, ...), este script verifica o diretório de trabalho buscando arquivos `.input` **sem** o correspondente `.fits` de saída e escreve um script de recuperação `missing_fits.sh` contendo **apenas** os comandos GALFITM faltantes.
+
+```bash
+python generate_missing_fits.py
+chmod +x missing_fits.sh
+./missing_fits.sh
+```
+
+O script de recuperação:
+- Usa `set +e` para que falhas individuais não abortem a execução
+- Imprime uma linha de progresso `[N/total] Completado` após cada ajuste finalizado
+- Pode ser executado quantas vezes for necessário — os `.fits` já gerados são pulados
+
+Se nada estiver faltando, o script informa e termina sem criar `missing_fits.sh`.
+
+### 9.3 `generate_psf_from_field.py` — reconstruir uma PSF faltante
+
+Se o `Recortar.py` não conseguiu construir uma PSF para um filtro em particular (por exemplo porque `FWHM` ou `BETA` estavam ausentes do header FITS no primeiro download, ou o arquivo foi deletado), este script procura qualquer imagem S-PLUS de campo daquele filtro em disco, lê `FWHM` e `BETA` do header e regenera a PSF Moffat faltante em `Field_Img/psf/`.
+
+Uso:
+
+```bash
+python generate_psf_from_field.py CAMPO FILTRO
+```
+
+Exemplos:
+
+```bash
+python generate_psf_from_field.py STRIPE82-0001 F378
+python generate_psf_from_field.py HYDRA-0001 R
+python generate_psf_from_field.py SPLUS-n03s27 F395
+```
+
+O script:
+- Procura arquivos que correspondam ao padrão `*_FILTRO.fits` no diretório de trabalho e em `Field_Img/`
+- Testa vários keywords comuns do header (`FWHM`, `PSF_FWHM`, `SEEING`, ...; `BETA`, `MOFFAT_BETA`, ...)
+- Escreve a nova PSF em `Field_Img/psf/psf_{CAMPO}_{FILTRO}.fits`
+
+Após regenerar a PSF, é possível executar novamente os ajustes do GALFITM afetados com `generate_missing_fits.py`.
+
+---
+
+## 10. Amostra de galáxias de campo (controle)
 
 Para processar uma **amostra de galáxias de campo** (amostra de controle, fora de aglomerados):
 
@@ -326,14 +411,13 @@ Esses scripts seguem a mesma estrutura de 12 filtros, mas trabalham sobre objeto
 
 ---
 
-## 10. Dados do S-PLUS
+## 11. Dados do S-PLUS
 
 Os catálogos fotométricos e imagens do S-PLUS estão disponíveis em **https://splus.cloud**.
 
 ---
 
-
-## 11. Citação
+## 12. Citação
 
 Se você usar o MorphoPlus em sua pesquisa, por favor cite o seguinte artigo:
 
@@ -372,14 +456,16 @@ Entrada BibTeX:
 
 ---
 
-## 12. Solução de problemas
+## 13. Solução de problemas
 
 | Sintoma | Causa provável | Solução |
 |---------|---------------|---------|
+| Pipeline interrompido no meio da execução (queda de energia, kill, reboot) | Qualquer erro | Rodar `python generate_missing_fits.py` e depois `./missing_fits.sh` para retomar **apenas** os ajustes pendentes. Ver [Seção 9.2](#92-generate_missing_fitspy--retomar-após-uma-queda). |
+| Quer saber o quanto o pipeline já avançou | — | Rodar `python count_fits.py` a qualquer momento. Ver [Seção 9.1](#91-count_fitspy--verificação-de-progresso). |
+| PSF não criada para um filtro | FWHM/BETA ausentes do header FITS no download inicial, ou arquivo deletado | Rodar `python generate_psf_from_field.py CAMPO FILTRO` para reconstruí-la a partir de outra imagem do mesmo filtro. Ver [Seção 9.3](#93-generate_psf_from_fieldpy--reconstruir-uma-psf-faltante). |
 | `mascara.py` trava / memória esgota | Arquivos FITS não são fechados no loop | Usar `mascara_fixed.py` que emprega `with fits.open()` e `del` explícito após cada leitura de `CCDData` |
 | Downloads do S-PLUS travam ou falham | Timeout de rede ou rate limit da API | Reduzir `MAX_WORKERS` em `Recortar.py` para 3–4; o pipeline tenta novamente automaticamente com backoff exponencial |
 | `sex: command not found` | SExtractor não instalado ou não está no PATH | Seguir os passos de instalação da Seção 2; tentar a alternativa conda |
 | Input do GALFITM tem magnitudes > 30 | Problema com flags de fotometria | O pipeline substitui automaticamente magnitudes inválidas (> 30) pelo valor da banda r |
-| Pipeline interrompido no meio da execução | Qualquer erro | Rodar novamente `python ejecutable.py` e `./ejecutable.sh`; campos e galáxias já processados são pulados via os logs em `Catalogos/` |
 | `KeyError: 'X'` ou `KeyError: 'Y'` | Colunas de pixels ausentes no catálogo | Rodar `ejecutable.py` primeiro; ele calcula X e Y automaticamente via WCS |
-| PSF não criada para um filtro | FWHM/BETA não encontrados no header FITS | Um aviso é impresso; o GALFITM rodará sem essa PSF — verificar a versão do DR |
+| Um ajuste do GALFITM falha mas o pipeline continua | Problema de convergência em uma sub-imagem | Esperado — a Etapa 4 roda com `set +e` para que falhas individuais não abortem a execução. Usar `count_fits.py` e `generate_missing_fits.py` para inspecionar e tentar novamente. |
