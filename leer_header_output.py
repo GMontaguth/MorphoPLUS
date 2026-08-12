@@ -8,6 +8,16 @@ Two types of output files are processed:
   1. Group sub-images  : Galfitm_{cx}_{cy}_{field}.fits
   2. Individual galaxies: Gal_{ID}.fits
 
+RESUME SUPPORT
+--------------
+If `Catalogos/GalfitM_output.csv` already exists, the galaxies listed there
+(by column `ID`) are skipped — both header reading and SVG generation.
+The script also skips any individual SVG that already exists in `Out_img/`,
+so it can be safely re-run after a crash.
+
+The CSV is re-written after every FITS file is processed, so partial progress
+is preserved if the run is interrupted.
+
 Usage:
     python leer_header_output.py
 """
@@ -19,8 +29,15 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib import colors
 
-from ejecutable import c, size, S
+#from ejecutable import c, size, S
 from table_generation import tables
+c    = [275, 825, 1375, 1925, 2475, 3025, 3575, 4125, 4675, 5225,
+        5775, 6325, 6875, 7425, 7975, 8525, 9075, 9625, 10175, 10725]
+size = 550
+S       = Table.read('Catalogos/SPLUS_Table.csv')
+Dados_S = S.group_by('Field')
+Fields  = Dados_S.groups.keys
+
 
 # =============================================================================
 # CONFIG
@@ -30,6 +47,7 @@ OUT_IMG_DIR = "Out_img"
 MAKE_IMAGES = True
 
 os.makedirs(OUT_IMG_DIR, exist_ok=True)
+os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
 
 # Filter arrays — order must match GALFITM band order
 Fil_name = np.array(['R','J0378','J0395','J0410','J0430','J0515',
@@ -97,6 +115,14 @@ def build_header_names():
             f"PA_{Fil_name[i]}",  f"e_PA_{Fil_name[i]}",
         ]
     return names
+
+
+def save_csv(rows, names, path):
+    """Write the full results table to disk. Safe to call repeatedly."""
+    if not rows:
+        return
+    tbl = Table(rows=rows, names=names)
+    ascii.write(tbl, path, format='csv', fast_writer=False, overwrite=True)
 
 
 def _imshow_band(ax, data2d, j):
@@ -181,7 +207,28 @@ def grafico_i(fi, position, field, Tabled, r):
 # MAIN
 # =============================================================================
 
+header_names = build_header_names()
+
+# -------------------------------------------------------------------
+# RESUME: load galaxies already processed so we can skip them.
+# -------------------------------------------------------------------
+processed_ids = set()
 Tabla = []
+if os.path.exists(OUT_CSV):
+    try:
+        existing = Table.read(OUT_CSV, format='csv')
+        processed_ids = {str(x) for x in existing['ID']}
+        # Keep the existing rows so the final CSV preserves them
+        Tabla = [list(row) for row in existing]
+        print(f"[RESUME] {len(processed_ids)} galaxies already in '{OUT_CSV}' "
+              f"will be skipped.")
+    except Exception as e:
+        print(f"[WARN] Could not read existing CSV ({e}). Starting from scratch.")
+        processed_ids = set()
+        Tabla = []
+else:
+    print(f"[INFO] No existing '{OUT_CSV}' found — processing everything.")
+
 
 S_cat   = Table.read('Catalogos/SPLUS_Table.csv')
 Datos_S = S_cat.group_by('Field')
@@ -199,48 +246,76 @@ for f in Fields:
             # Type 1 — Group sub-image: Galfitm_{cx}_{cy}_{field}.fits
             # ------------------------------------------------------------------
             if len(Tablef) > 0:
-                fits_path = f"Galfitm_{position[0]}_{position[1]}_{field}.fits"
-                band_path = f"Galfitm_{position[0]}_{position[1]}_{field}.galfit.01.band"
-                fi = None
-                try:
-                    fi = fits.open(fits_path)
-                    chi2_nu = get_chi2nu(band_path)
+                # Which galaxies in this group still need processing?
+                pending_idx = [i for i in range(len(Tablef))
+                               if str(Tablef['ID'][i]) not in processed_ids]
 
-                    for i in range(len(Tablef)):
-                        data = [chi2_nu]
-                        Tabla.append(
-                            leer_header(
-                                i + 1,
-                                fi[12].header,
-                                Tablef['ID'][i],
-                                f"{position[0]}_{position[1]}_{field}",
-                                data
+                if not pending_idx:
+                    # Nothing new here — don't even open the FITS.
+                    pass
+                else:
+                    fits_path = f"Galfitm_{position[0]}_{position[1]}_{field}.fits"
+                    band_path = f"Galfitm_{position[0]}_{position[1]}_{field}.galfit.01.band"
+                    fi = None
+                    new_in_group = 0
+                    try:
+                        fi = fits.open(fits_path)
+                        chi2_nu = get_chi2nu(band_path)
+
+                        for i in pending_idx:
+                            gid = Tablef['ID'][i]
+                            data = [chi2_nu]
+                            Tabla.append(
+                                leer_header(
+                                    i + 1,
+                                    fi[12].header,
+                                    gid,
+                                    f"{position[0]}_{position[1]}_{field}",
+                                    data
+                                )
                             )
-                        )
+                            processed_ids.add(str(gid))
+                            new_in_group += 1
 
-                    if MAKE_IMAGES:
-                        if len(fi) < 36:
-                            print(f"[SKIP IMG] {fits_path} — only {len(fi)} HDUs, need >= 36.")
-                        else:
-                            for i in range(len(Tablef)):
-                                out_svg = grafico_g(fi, position, field, Tablef, i)
-                                print(f"[IMG] {out_svg}")
+                            if MAKE_IMAGES:
+                                if len(fi) < 36:
+                                    print(f"[SKIP IMG] {fits_path} — only {len(fi)} HDUs, need >= 36.")
+                                else:
+                                    expected_svg = os.path.join(
+                                        OUT_IMG_DIR,
+                                        f"{int(position[0])}_{int(position[1])}_{field}_{gid}_{i}.svg"
+                                    )
+                                    if os.path.exists(expected_svg):
+                                        print(f"[SKIP IMG] {expected_svg} already exists")
+                                    else:
+                                        out_svg = grafico_g(fi, position, field, Tablef, i)
+                                        print(f"[IMG] {out_svg}")
 
-                except (FileNotFoundError, OSError) as e:
-                    print(f"[SKIP] {fits_path}: {e}")
-                finally:
-                    if fi is not None:
-                        fi.close()
+                    except (FileNotFoundError, OSError) as e:
+                        print(f"[SKIP] {fits_path}: {e}")
+                    finally:
+                        if fi is not None:
+                            fi.close()
+
+                    # Incremental save after every group file
+                    if new_in_group > 0:
+                        save_csv(Tabla, header_names, OUT_CSV)
 
             # ------------------------------------------------------------------
             # Type 2 — Individual galaxies: Gal_{ID}.fits
             # ------------------------------------------------------------------
             if len(Tabled) > 0:
                 for r in range(len(Tabled)):
-                    gid       = Tabled['ID'][r]
+                    gid = Tabled['ID'][r]
+
+                    # Skip galaxies already in the catalog
+                    if str(gid) in processed_ids:
+                        continue
+
                     fits_path = f"Gal_{gid}.fits"
                     band_path = f"Gal_{gid}.galfit.01.band"
                     fi = None
+                    added_row = False
                     print(f"[GAL] {fits_path}")
                     try:
                         fi = fits.open(fits_path)
@@ -255,13 +330,22 @@ for f in Fields:
                                 data
                             )
                         )
+                        processed_ids.add(str(gid))
+                        added_row = True
 
                         if MAKE_IMAGES:
                             if len(fi) < 36:
                                 print(f"[SKIP IMG] {fits_path} — only {len(fi)} HDUs.")
                             else:
-                                out_svg = grafico_i(fi, position, field, Tabled, r)
-                                print(f"[IMG] {out_svg}")
+                                expected_svg = os.path.join(
+                                    OUT_IMG_DIR,
+                                    f"{int(position[0])}_{int(position[1])}_{field}_{gid}.svg"
+                                )
+                                if os.path.exists(expected_svg):
+                                    print(f"[SKIP IMG] {expected_svg} already exists")
+                                else:
+                                    out_svg = grafico_i(fi, position, field, Tabled, r)
+                                    print(f"[IMG] {out_svg}")
 
                     except (FileNotFoundError, OSError) as e:
                         print(f"[SKIP] {fits_path}: {e}")
@@ -269,11 +353,12 @@ for f in Fields:
                         if fi is not None:
                             fi.close()
 
-# =============================================================================
-# WRITE OUTPUT CSV
-# =============================================================================
-header_names = build_header_names()
-table_out    = Table(rows=Tabla, names=header_names)
+                    # Incremental save after every individual galaxy
+                    if added_row:
+                        save_csv(Tabla, header_names, OUT_CSV)
 
-ascii.write(table_out, OUT_CSV, format='csv', fast_writer=False, overwrite=True)
-print(f"\n[Done] {len(table_out)} rows saved to '{OUT_CSV}'.")
+# =============================================================================
+# FINAL WRITE
+# =============================================================================
+save_csv(Tabla, header_names, OUT_CSV)
+print(f"\n[Done] {len(Tabla)} total rows saved to '{OUT_CSV}'.")
